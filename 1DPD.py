@@ -5,23 +5,54 @@ import numpy as np
 import numpy.ma as ma
 import numpy.random
 import scipy.spatial
-import scipy.linalg
-import scipy.sparse
-import scipy.sparse.linalg
 import scipy.optimize
 import matplotlib.pyplot as plt
 
-np.set_printoptions(precision=4)
 
 
 class PD_Problem():
+    '''
+       This class initializes a 1D peridynamic problem.  This problem is essentially
+       a long bar with displacement boundary conditions applied to boundary regions
+       equal to 1-horizon at each end.
+
+       Initialization parameters are as follows:
+
+       + bar_length - length of bar, it will be centered at the origin
+
+       + number_of_elements - the discretization level
+
+       + bulk_modulus
+
+       + randomization_factor - if this optional parameter is set to anything
+       other than 0.0, a set of discretization points interior to the bar are randomly
+       perturbed by the amount set by this parameter.  Regions near the boundaries are
+       not perturbed in order to maintain a consisitancy in the application of the
+       boundary conditions such that comparisons can be made between perturbed
+       and uniformly spaced models.  A reasonable setting for the parameter will be in the 
+       range of 0.0-0.3
+
+       + constitutive_model_flag - this parameter defaults to `native` but could
+       also be set to `correspondece`.  If set to `native` the linear peridynamic
+       solid model of Silling et al. 2007 will be used in solving for the internal force.
+       If set to `correspondence` an elastic stress-strain law is converted to 
+       force vector-states.  Both formulations will yield the same result.
+
+       Accessible attributes:
+           
+    '''
 
     def __init__(self,bar_length=20,number_of_elements=20,
-            bulk_modulus=100,horizon=None,randomization_factor=0.0):
+            bulk_modulus=100,horizon=None,randomization_factor=0.0,
+            constitutive_model_flag='native'):
+        '''
+           Initialization function
+        '''
 
 
         #Problem data
         self.bulk_modulus = bulk_modulus
+        self.constitutive_model_flag=constitutive_model_flag
 
 
         self.bar_length = bar_length
@@ -29,10 +60,11 @@ class PD_Problem():
 
         delta_x = bar_length / number_of_elements
 
-        #This array are the ``element'' node locations.  i.e., they define the discrete
+        #This array contains the ``element'' node locations.  i.e., they define the discrete
         #regions along the bar. The peridynamic node locations will be at the centroid
         #of these regions.
-        self.nodes = np.linspace(0.0, bar_length, num=number_of_elements + 1)
+        self.nodes = np.linspace(-bar_length / 2.0, bar_length / 2.0, num=number_of_elements + 1)
+        #self.nodes = np.linspace(0.0, bar_length, num=number_of_elements + 1)
 
         #Set horizon from parameter list or as default
         if horizon != None:
@@ -44,7 +76,7 @@ class PD_Problem():
         #boundary conditions are applied), will be randomly perturbed
         if randomization_factor != 0.0:
             #Don't perturb the nodes on the boundary
-            number_of_boundary_nodes = int(np.round(horizon/delta_x)) + 1
+            number_of_boundary_nodes = int(np.round(2.0*horizon/delta_x)) + 1
             
             #Create random perturbations to be applied on the boundary
             random_perturbations = numpy.random.uniform(-randomization_factor*delta_x,
@@ -136,59 +168,33 @@ class PD_Problem():
 
         #Check to see if the neighboring node has a partial volume
         is_partial_volume = np.abs(horiz - ref_mag_state) < lens[neigh] / 2.0
-        #Four different scenarios,
+        #Two different scenario:
         is_partial_volume_case1 = np.all([is_partial_volume, 
-                                          ref_mag_state > horiz],axis=0)
+                                          ref_mag_state >= horiz],axis=0)
         is_partial_volume_case2 = np.all([is_partial_volume, 
                                           ref_mag_state < horiz],axis=0) 
-        #Positive ref_pos_state and node inside horiz
-        #Positive ref_pos_state and node outside horizon
-        #is_partial_volume_case1 = np.all([is_partial_volume, 
-                                          #ref_pos_state > 0, 
-                                          #0 < ref_mag_state - horiz, 
-                                          #ref_mag_state - horiz < lens[neigh] / 2], axis=0)
-        #Positive ref_pos_state and node inside horiz
-        #is_partial_volume_case2 = np.all([is_partial_volume,
-                                          #ref_pos_state > 0, 
-                                          #0 > ref_mag_state - horiz, 
-                                          #ref_mag_state - horiz > -lens[neigh] / 2], axis=0)
-        #Negative ref_pos_state and node outside horiz
-        #is_partial_volume_case3 = np.all([is_partial_volume,
-                                          #ref_pos_state < 0, 
-                                          #0 < ref_mag_state - horiz, 
-                                          #ref_mag_state - horiz < lens[neigh] / 2], axis=0)
-        #Negative ref_pos_state and node inside horiz
-        #is_partial_volume_case4 = np.all([is_partial_volume,
-                                          #ref_pos_state < 0, 
-                                          #0 > ref_mag_state - horiz, 
-                                          #ref_mag_state - horiz > -lens[neigh] / 2], axis=0)
 
-        #This is basically a series of nested if-statement in numpy
+        #Compute the partial volumes conditionally
         vol_state = np.where(is_partial_volume_case1, lens[neigh] / 2.0 - (ref_mag_state - horiz), vol_state)
         vol_state = np.where(is_partial_volume_case2, lens[neigh] / 2.0 + (horiz - ref_mag_state), vol_state)
-        #vol_state = np.where(is_partial_volume_case1, horiz - (ref_pos_state - lens[neigh] / 2.0), vol_state)
-        #vol_state = np.where(is_partial_volume_case2, horiz - (ref_pos_state - lens[neigh] / 2.0), vol_state)
-        #vol_state = np.where(is_partial_volume_case3, horiz - np.abs(ref_pos_state + lens[neigh] / 2.0), vol_state)
-        #vol_state = np.where(is_partial_volume_case4, horiz - np.abs(ref_pos_state + lens[neigh] / 2.0), vol_state)
 
         #Trim down the arrays to the minimum and create masked arrays for the upcoming
-        #internal force and tangent stiffness calculations
+        #internal force calculation
         self.max_neighbors = np.max((vol_state != -1).sum(axis=1))
         self.volume_state = ma.masked_equal(vol_state[:,:self.max_neighbors],-1)
         self.volume_state.harden_mask()
 
         #Now compute the "reverse volume state", this is the partial volume of the "source" node, i.e. node i,
         #as seen from node j
-        #rev_vol_state = vol_state.copy()
-        #rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
-        #rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
-        #self.reverse_volume_state = ma.masked_array(rev_vol_state[:,:self.max_neighbors], mask=self.volume_state.mask)
+        rev_vol_state = np.ones_like(vol_state) * lens[:,None]
+        rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
+        rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
+        self.reverse_volume_state = ma.masked_array(rev_vol_state[:,:self.max_neighbors], mask=self.volume_state.mask)
 
         return
 
-   
-        # Internal force calculation
-    def __compute_internal_force(self, displacement, force):
+    #Compute the force vector-state using a native peridynamic formulation
+    def __compute_force_state_native(self, disp):
             
         #Define some local convenience variables     
         ref_pos = self.pd_nodes 
@@ -197,12 +203,11 @@ class PD_Problem():
         ref_mag_state = self.reference_magnitude_state
         shape_tens = self.shape_tensor
         vol_state = self.volume_state
-        #rev_vol_state = self.reverse_volume_state
-        lens = self.lengths
+        rev_vol_state = self.reverse_volume_state
         neigh = self.neighborhood
 
         #Compute the deformed positions of the nodes
-        def_pos = ref_pos + displacement
+        def_pos = ref_pos + disp
 
         #Compute deformation state
         def_state = ma.masked_array(def_pos[neigh] - def_pos[:,None], mask=neigh.mask)
@@ -222,67 +227,72 @@ class PD_Problem():
         #Compute the force state
         force_state = scalar_force_state * def_unit_state
 
-        
-        #Integrate nodal forces 
-        force[:] += 0.5 * (force_state * vol_state).sum(axis=1)
+        return force_state
 
-        #tmp = np.bincount(neigh.compressed(), (force_state * rev_vol_state).compressed())
-        #force[:len(tmp)] -= tmp
+    #Compute the force vector-state using a correspondence, i.e. stress-strain
+    #formulation through approximation of the deformation gradient
+    def __compute_force_state_correspondence(self,disp):
 
-        return
+        #Define some local convenience variables     
+        ref_pos = self.pd_nodes 
+        inf_state = self.influence_state
+        ref_pos_state = self.reference_position_state
+        shape_tens = self.shape_tensor
+        neigh = self.neighborhood
+        vol_state = self.volume_state
 
-    def __compute_internal_force_correspondence(self):
+        #Compute the deformed positions of the nodes
+        def_pos = ref_pos + disp
+
+        #Compute deformation state
+        def_state = ma.masked_array(def_pos[neigh] - def_pos[:,None], mask=neigh.mask)
 
         #Compute approximate deformation gradient
-        #deformation_gradient = (deformation_state * ref_pos_state * vol_state).sum(axis=1)
+        deformation_gradient = (inf_state * def_state * ref_pos_state * vol_state).sum(axis=1) / shape_tens
+
         #Compute 1d strain
-        #strain = deformation_gradient - 1.0
+        strain = deformation_gradient - 1.0
+
         #Compute 1d stress
-        #stress = bulk_modulus * strain
+        stress = self.bulk_modulus * strain
 
         #In 1d the Cauchy stress and 1st Piola-Kirchoff stress coincide, so there
         #is no need to convert, but there would be in higher dimensions
        
         #Compute the force state
-        #force_state = inf_state * stress[:,None] / shape_tens[:,None] * ref_pos_state
+        force_state = inf_state * stress[:,None] / shape_tens[:,None] * ref_pos_state
+
+        return force_state
+
+   
+    # Internal force calculation
+    def __compute_internal_force(self, displacement, force):
+            
+        #Define some local convenience variables     
+        vol_state = self.volume_state
+        rev_vol_state = self.reverse_volume_state
+        neigh = self.neighborhood
+        
+
+        #Compute the force vector-state according to the choice of constitutive
+        #model  
+        if self.constitutive_model_flag == 'native':
+            force_state = self.__compute_force_state_native(displacement)
+
+        elif self.constitutive_model_flag == 'correspondence':
+            force_state = self.__compute_force_state_correspondence(displacement)
+
+        
+        #Integrate nodal forces 
+        force[:] += (force_state * vol_state).sum(axis=1)
+
+        tmp = np.bincount(neigh.compressed(), (force_state * rev_vol_state).compressed())
+        force[:len(tmp)] -= tmp
 
         return
 
 
-    def __compute_force_difference(self, probed_displacement, probe_length, probed_force, force):
-
-
-        probed_force[:] = 0.0     
-
-        self.__compute_internal_force(probed_displacement, probed_force)                
-
-        #Forward difference formula
-        return (probed_force - force) / probe_length
-
-
-    def __compute_tangent_stiffness(self, alpha=1.e-4, beta=1.e-6):
-
-        disp = self.displacement
-
-        #Compute the internal force based on the reference displacement
-        force = np.zeros_like(disp)
-
-        self.__compute_internal_force(disp, force)
-
-        #Construct the probe matrix
-        probe_lengths = alpha * np.abs(disp) + beta
-
-        probed_disp_matrix = np.identity(len(probe_lengths)) * probe_lengths[:, None]
-
-        #Return the tangent stiffness matrix from forward difference calculation
-        probed_force = np.zeros_like(force)
-
-        tangent_stiffness = np.array([ self.__compute_force_difference(args[0], args[1], 
-            probed_force, force) 
-            for args in zip(probed_disp_matrix, probe_lengths)])
-
-        return -tangent_stiffness.T
-
+    #The residual is objective function for the minimization problem
     def __compute_residual(self, disp):
 
         #Apply displacements
@@ -297,67 +307,22 @@ class PD_Problem():
         self.__compute_internal_force(disp, residual_vector)
 
         #Zero out the residual in the kinematic boundary condition region
+        self.reaction = np.mean(residual_vector[self.left_boundary_region])
         residual_vector[self.left_boundary_region] = 0.0
         residual_vector[self.right_boundary_region] = 0.0
 
-        #return scipy.linalg.norm(residual_vector)
         return residual_vector
 
 
-
-    def solve(self,prescribed_displacement=0.01, number_of_iterations=100, absolute_tolerence=0.1):
-
-        #Find the nodes within 1 horizon of each end to apply the boundary conditions on.
-        self.left_boundary_region = self.tree.query_ball_point(self.pd_nodes[0, None], r=self.horizon, p=2, eps=0.0)
-        self.right_boundary_region = self.tree.query_ball_point(self.pd_nodes[-1, None], r=self.horizon, p=2, eps=0.0)
-
-        #Apply displacements
-        self.displacement[self.left_boundary_region] = -prescribed_displacement
-        self.displacement[self.right_boundary_region] = prescribed_displacement
-
-        #Initialize residual
-        residual_vector = np.zeros_like(self.displacement)
-
-        print "Starting Newton's method solve...\n"
-        
-        #Newton's method solve
-        for iteration in range(number_of_iterations):
-
-            #Compute the out-of-balance force vector
-            residual_vector[:] = 0.0
-            self.__compute_internal_force(self.displacement, residual_vector)
-
-            #Zero out the residual in the kinematic boundary condition region
-            residual_vector[self.left_boundary_region] = 0.0
-            residual_vector[self.right_boundary_region] = 0.0
-
-            #Compute the residual
-            residual = scipy.linalg.norm(residual_vector)
- 
-            print "Residual = " + str(residual)
-
-            #Break if converged
-            if residual < absolute_tolerence: break
-
-            #Compute the tangent stiffness
-            tangent_stiffness = self.__compute_tangent_stiffness()
-
-
-            #Apply the boundary conditions to the tangent stiffness matrix
-            for index in self.left_boundary_region:
-                tangent_stiffness[index,:] = 0.0
-                tangent_stiffness[index,index] = 1.0
-            for index in self.right_boundary_region:
-                tangent_stiffness[index,:] = 0.0
-                tangent_stiffness[index,index] = 1.0
-
-            self.displacement += scipy.sparse.linalg.spsolve(
-                    scipy.sparse.csr_matrix(tangent_stiffness), residual_vector)
-            #End for loop
-
-        return 
-
-    def solve2(self,prescribed_displacement=0.1):
+    def solve(self,prescribed_displacement=0.1):
+        '''
+           The method will solve the instantiated problem object given an initial
+           prescribed displacement.  The solution method utilizes a Newton-Krylov
+           minimization technique.  This choice of method avoids the need to explicitly
+           specify a tangent-stiffness matrix  and works well for large problems as 
+           well as provides convergent solutions even in the presence of geometric
+           nonlinearities that may arise when due to large prescribed displacements. 
+        '''
 
         self.prescribed_displacement = prescribed_displacement
 
@@ -366,11 +331,12 @@ class PD_Problem():
         self.right_boundary_region = self.tree.query_ball_point(self.pd_nodes[-1, None], r=self.horizon, p=2, eps=0.0)
 
         #Initial guess is linear between endpoint displacements
-        #guess = np.linspace(-prescribed_displacement, 0.0, len(self.displacement))
-        guess = np.zeros_like(self.displacement)
+        guess = np.linspace(-prescribed_displacement, prescribed_displacement, len(self.displacement))
 
         #Solve
-        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess)
+        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-12)
+
+
 
     #Public get functions
     def get_solution(self):
@@ -383,29 +349,53 @@ class PD_Problem():
 ### Main Program ####
 if __name__ == "__main__":
 
-    fixed_horizon = 3.5
-    fixed_length = 20
+    #Define problem size
+    fixed_horizon = 4.2
+    fixed_length = 40
     delta_x = 1.0
 
     #Instantiate a 1d peridynamic problem with equally spaced nodes
     problem1 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon)
-    #Solve the problem via Newton's method
-    problem1.solve2()
-    #problem1.solve(absolute_tolerence=1.0e-6,number_of_iterations=1000)
+    #Solve the problem
+    problem1.solve()
     #Get the node locations and displacement solution
     disp1 = problem1.get_solution()
     nodes1 = problem1.get_nodes()
 
-    #Instantiate a 1d peridynamic problem with randomly spaced nodes
+    #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
+    #are perturbed randomly by randomization_factor
     problem2 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3)
-    #Solve the problem via Newton's method
-    problem2.solve2()
+    #Solve the problem
+    problem2.solve()
     #Get the node locations and displacement solution
     disp2 = problem2.get_solution()
     nodes2 = problem2.get_nodes()
-    
+
+    #Instantiate a 1d peridynamic problem with equally spaced nodes using a 
+    #correspondence constitutive model
+    problem3 = PD_Problem(bar_length=fixed_length, 
+            number_of_elements=(fixed_length/delta_x), 
+            horizon=fixed_horizon,
+            constitutive_model_flag='correspondence')
+    #Solve the problem
+    problem3.solve()
+    #problem1.solve(absolute_tolerence=1.0e-6,number_of_iterations=1000)
+    #Get the node locations and displacement solution
+    disp3 = problem1.get_solution()
+    nodes3 = problem1.get_nodes()
+
+    #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
+    #are perturbed randomly by randomization_factor. Uses the correspondence constitutive
+    #model
+    problem4 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3)
+    #Solve the problem
+    problem4.solve()
+    #Get the node locations and displacement solution
+    disp4 = problem4.get_solution()
+    nodes4 = problem4.get_nodes()
+
     #plt.plot(nodes1, disp1, 'k*-')
-    plt.plot(nodes1, disp1, 'k*-', nodes2, disp2, 'r+-')
+    plt.plot(nodes1, disp1, 'k-', nodes2, disp2, 'r-', nodes3, disp3, 'b-', nodes4, disp4, 'g-')
     plt.show()
 
 
