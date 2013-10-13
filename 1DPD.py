@@ -18,28 +18,16 @@ class PD_Problem():
 
        Initialization parameters are as follows:
 
-       + bar_length - length of bar, it will be centered at the origin
+       + ``bar_length`` - length of bar, it will be centered at the origin
 
-       + number_of_elements - the discretization level
+       + ``number_of_elements`` - the discretization level
 
-       + bulk_modulus
+       + ``bulk_modulus``
 
-       + randomization_factor - if this optional parameter is set to anything
-       other than 0.0, a set of discretization points interior to the bar are randomly
-       perturbed by the amount set by this parameter.  Regions near the boundaries are
-       not perturbed in order to maintain a consisitancy in the application of the
-       boundary conditions such that comparisons can be made between perturbed
-       and uniformly spaced models.  A reasonable setting for the parameter will be in the 
-       range of 0.0-0.3
+       + ``randomization_factor`` - if this optional parameter is set to anything other than 0.0, a set of discretization points interior to the bar are randomly perturbed by the amount set by this parameter.  Regions near the boundaries are not perturbed in order to maintain a consistency in the application of the boundary conditions such that comparisons can be made between perturbed and uniformly spaced models.  A reasonable setting for the parameter will be in the range of 0.0-0.3
 
-       + constitutive_model_flag - this parameter defaults to `native` but could
-       also be set to `correspondece`.  If set to `native` the linear peridynamic
-       solid model of Silling et al. 2007 will be used in solving for the internal force.
-       If set to `correspondence` an elastic stress-strain law is converted to 
-       force vector-states.  Both formulations will yield the same result.
+       + ``constitutive_model_flag`` - this parameter defaults to ``native`` but could also be set to ``correspondece``.  If set to ``native`` the linear peridynamic solid model of Silling et al. 2007 will be used in solving for the internal force.  If set to `correspondence` an elastic stress-strain law is converted to force vector-states.  Both formulations will yield the same result.
 
-       Accessible attributes:
-           
     '''
 
     def __init__(self,bar_length=20,number_of_elements=20,
@@ -60,11 +48,8 @@ class PD_Problem():
 
         delta_x = bar_length / number_of_elements
 
-        #This array contains the ``element'' node locations.  i.e., they define the discrete
-        #regions along the bar. The peridynamic node locations will be at the centroid
-        #of these regions.
+        #:This array contains the *element* node locations.  i.e., they define the discrete regions along the bar. The peridynamic node locations will be at the centroid of these regions.
         self.nodes = np.linspace(-bar_length / 2.0, bar_length / 2.0, num=number_of_elements + 1)
-        #self.nodes = np.linspace(0.0, bar_length, num=number_of_elements + 1)
 
         #Set horizon from parameter list or as default
         if horizon != None:
