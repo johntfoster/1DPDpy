@@ -37,7 +37,6 @@ class PD_Problem():
            Initialization function
         '''
 
-
         #Problem data
         self.bulk_modulus = bulk_modulus
         self.constitutive_model_flag=constitutive_model_flag
@@ -78,13 +77,13 @@ class PD_Problem():
         
         nodes = self.nodes
 
-        #The lengths of the ``elements''
+        #:The lengths of the *elements*
         self.lengths = (nodes[1:] - nodes[0:-1]) 
 
-        #The PD nodes are the centroids of the elements
+        #:The PD nodes are the centroids of the elements
         self.pd_nodes = nodes[0:-1] + self.lengths / 2.0
 
-        #Create a kdtree to do nearest neighbor search
+        #:Create's a kdtree to do nearest neighbor search
         self.tree = scipy.spatial.cKDTree(self.pd_nodes[:,None])
 
         #Get PD nodes in the neighborhood of support + largest node spacing, this will
@@ -113,19 +112,23 @@ class PD_Problem():
         ref_pos_state = self.reference_position_state
         ref_mag_state = self.reference_magnitude_state
 
+        #:A Numpy masked array of indices that include all other nodes inside the support neighborhood
         self.neighborhood = ma.masked_array(self.neighborhood[:,:max_neigh],mask=vol_state.mask)
+        #:A Numpy masked array containing the *reference position vector-state* as defined in Silling et al. 2007
         self.reference_position_state = ma.masked_array(ref_pos_state[:,:max_neigh],mask=vol_state.mask)
+        #:A Numpy masked array containing the *reference magnitude vector-state* as defined in Silling et al. 2007
         self.reference_magnitude_state = ma.masked_array(ref_mag_state[:,:max_neigh],mask=vol_state.mask)
 
-        #Initialize influence state
+        #:A Numpy masked array containing the *influence vector-state* as defined in Silling et al. 2007
         self.influence_state = np.ones_like(vol_state)
 
         #Compute the shape tensor (really a scalar because this is 1d, just want to use 
         #consistent terminology)
+        #:A Numpy masked array containing the *shape tensor* as defined in Silling et al. 2007, in 1D this is identical to the *weighted volume*, this would not be true in higher dimensions
         self.shape_tensor = (self.influence_state * self.reference_position_state * 
                 self.reference_position_state * vol_state).sum(axis=1)
 
-        #Initialize the displacement
+        #:The displacement field
         self.displacement = np.zeros_like(self.pd_nodes)
 
         return
@@ -166,6 +169,7 @@ class PD_Problem():
         #Trim down the arrays to the minimum and create masked arrays for the upcoming
         #internal force calculation
         self.max_neighbors = np.max((vol_state != -1).sum(axis=1))
+        #:The *volume scalar-state* is a masked array containing the partial volumes of the support neighborhood
         self.volume_state = ma.masked_equal(vol_state[:,:self.max_neighbors],-1)
         self.volume_state.harden_mask()
 
@@ -174,6 +178,7 @@ class PD_Problem():
         rev_vol_state = np.ones_like(vol_state) * lens[:,None]
         rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
         rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
+        #:The *reverse volume scalar-state* is defined for computational convience, it is the partial volume of the *source* node as seen from the support neighborhood nodes
         self.reverse_volume_state = ma.masked_array(rev_vol_state[:,:self.max_neighbors], mask=self.volume_state.mask)
 
         return
@@ -233,10 +238,12 @@ class PD_Problem():
         def_state = ma.masked_array(def_pos[neigh] - def_pos[:,None], mask=neigh.mask)
 
         #Compute approximate deformation gradient
-        deformation_gradient = (inf_state * def_state * ref_pos_state * vol_state).sum(axis=1) / shape_tens
+        def_grad = (inf_state * def_state * ref_pos_state * vol_state).sum(axis=1) / shape_tens
+        #:The deformation gradient field
+        self.deformation_gradient = def_grad
 
         #Compute 1d strain
-        strain = deformation_gradient - 1.0
+        strain = def_grad - 1.0
 
         #Compute 1d stress
         stress = self.bulk_modulus * strain
@@ -292,7 +299,6 @@ class PD_Problem():
         self.__compute_internal_force(disp, residual_vector)
 
         #Zero out the residual in the kinematic boundary condition region
-        self.reaction = np.mean(residual_vector[self.left_boundary_region])
         residual_vector[self.left_boundary_region] = 0.0
         residual_vector[self.right_boundary_region] = 0.0
 
@@ -307,12 +313,18 @@ class PD_Problem():
            specify a tangent-stiffness matrix  and works well for large problems as 
            well as provides convergent solutions even in the presence of geometric
            nonlinearities that may arise when due to large prescribed displacements. 
-        '''
 
+           Initialization parameters are as follows:
+
+           + ``prescribed_displacement`` - The initial displacement prescribed to the bar
+        '''
+    
         self.prescribed_displacement = prescribed_displacement
 
         #Find the nodes within 1 horizon of each end to apply the boundary conditions on.
+        #:The node indices of the boundary region at the left end of the bar
         self.left_boundary_region = self.tree.query_ball_point(self.pd_nodes[0, None], r=self.horizon, p=2, eps=0.0)
+        #:The node indices of the boundary region at the right end of the bar
         self.right_boundary_region = self.tree.query_ball_point(self.pd_nodes[-1, None], r=self.horizon, p=2, eps=0.0)
 
         #Initial guess is linear between endpoint displacements
@@ -325,10 +337,16 @@ class PD_Problem():
 
     #Public get functions
     def get_solution(self):
+        ''' Convenience function for retrieving displacement'''
         return self.displacement
 
     def get_nodes(self):
+        ''' Convenience function for retrieving peridynamic node locations'''
         return self.pd_nodes
+
+    def get_deformation_gradient(self):
+        ''' Convenience function for retrieving deformation gradient'''
+        return self.deformation_gradient
 
 
 ### Main Program ####
