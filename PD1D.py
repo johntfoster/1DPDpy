@@ -202,6 +202,11 @@ class PD_Problem():
         #Compute deformation state
         def_state = ma.masked_array(def_pos[neigh] - def_pos[:,None], mask=neigh.mask)
 
+        #Compute approximate deformation gradient, this is only for plotting purposes, it's
+        #not needed in this constitutive model
+        def_grad = (inf_state * def_state * ref_pos_state * vol_state).sum(axis=1) / shape_tens
+        self.deformation_gradient = def_grad
+
         #Compute deformation magnitude state
         def_mag_state = (def_state * def_state)**0.5 
 
@@ -331,7 +336,7 @@ class PD_Problem():
         guess = np.linspace(-prescribed_displacement, prescribed_displacement, len(self.displacement))
 
         #Solve
-        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-12)
+        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-8)
 
 
 
@@ -384,13 +389,13 @@ if __name__ == "__main__":
     problem3.solve()
     #problem1.solve(absolute_tolerence=1.0e-6,number_of_iterations=1000)
     #Get the node locations and displacement solution
-    disp3 = problem1.get_solution()
-    nodes3 = problem1.get_nodes()
+    disp3 = problem3.get_solution()
+    nodes3 = problem3.get_nodes()
 
     #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
     #are perturbed randomly by randomization_factor. Uses the correspondence constitutive
     #model
-    problem4 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3)
+    problem4 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3, constitutive_model_flag='correspondence')
     #Solve the problem
     problem4.solve()
     #Get the node locations and displacement solution
