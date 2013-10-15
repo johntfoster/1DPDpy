@@ -26,13 +26,13 @@ class PD_Problem():
 
        + ``randomization_factor`` - if this optional parameter is set to anything other than 0.0, a set of discretization points interior to the bar are randomly perturbed by the amount set by this parameter.  Regions near the boundaries are not perturbed in order to maintain a consistency in the application of the boundary conditions such that comparisons can be made between perturbed and uniformly spaced models.  A reasonable setting for the parameter will be in the range of 0.0-0.3
 
-       + ``constitutive_model_flag`` - this parameter defaults to ``native`` but could also be set to ``correspondece``.  If set to ``native`` the linear peridynamic solid model of Silling et al. 2007 will be used in solving for the internal force.  If set to `correspondence` an elastic stress-strain law is converted to force vector-states.  Both formulations will yield the same result.
+       + ``constitutive_model_flag`` - this parameter defaults to ``LPS`` but could also be set to ``correspondece``.  If set to ``LPS`` the linear peridynamic solid model of Silling et al. 2007 will be used in solving for the internal force.  If set to `correspondence` an elastic stress-strain law is converted to force vector-states.  Both formulations will yield the same result.
 
     '''
 
     def __init__(self,bar_length=20,number_of_elements=20,
             bulk_modulus=100,horizon=None,randomization_factor=0.0,
-            constitutive_model_flag='native'):
+            constitutive_model_flag='LPS'):
         '''
            Initialization function
         '''
@@ -114,10 +114,15 @@ class PD_Problem():
 
         #:A Numpy masked array of indices that include all other nodes inside the support neighborhood
         self.neighborhood = ma.masked_array(self.neighborhood[:,:max_neigh],mask=vol_state.mask)
+        #This array should never change so we will set it to read only
+        self.neighborhood.setflags(write=False)
         #:A Numpy masked array containing the *reference position vector-state* as defined in Silling et al. 2007
         self.reference_position_state = ma.masked_array(ref_pos_state[:,:max_neigh],mask=vol_state.mask)
+        #This array should never change so we will set it to read only
+        self.reference_position_state.setflags(write=False)
         #:A Numpy masked array containing the *reference magnitude vector-state* as defined in Silling et al. 2007
         self.reference_magnitude_state = ma.masked_array(ref_mag_state[:,:max_neigh],mask=vol_state.mask)
+        self.reference_magnitude_state.setflags(write=False)
 
         #:A Numpy masked array containing the *influence vector-state* as defined in Silling et al. 2007
         self.influence_state = np.ones_like(vol_state)
@@ -151,40 +156,40 @@ class PD_Problem():
         #Initialize the volume_state to the lengths
         vol_state = lens[neigh]
         #Place dummy -1's in node locations that are not fully inside the support neighborhood nor have a partial volume
-        #vol_state = np.where(ref_mag_state <= horiz, vol_state, -1)
+        vol_state = np.where(ref_mag_state <= horiz, vol_state, -1)
         vol_state = np.where(ref_mag_state < horiz + lens[neigh] / 2.0, vol_state, -1)
 
         #Check to see if the neighboring node has a partial volume
-        is_partial_volume = np.abs(horiz - ref_mag_state) < lens[neigh] / 2.0
-        #Two different scenario:
-        is_partial_volume_case1 = np.all([is_partial_volume, 
-                                          ref_mag_state >= horiz],axis=0)
-        is_partial_volume_case2 = np.all([is_partial_volume, 
-                                          ref_mag_state < horiz],axis=0) 
+        #is_partial_volume = np.abs(horiz - ref_mag_state) < lens[neigh] / 2.0
+        ##Two different scenarios:
+        #is_partial_volume_case1 = np.all([is_partial_volume, 
+                                          #ref_mag_state >= horiz],axis=0)
+        #is_partial_volume_case2 = np.all([is_partial_volume, 
+                                          #ref_mag_state < horiz],axis=0) 
 
-        #Compute the partial volumes conditionally
-        vol_state = np.where(is_partial_volume_case1, lens[neigh] / 2.0 - (ref_mag_state - horiz), vol_state)
-        vol_state = np.where(is_partial_volume_case2, lens[neigh] / 2.0 + (horiz - ref_mag_state), vol_state)
+        ##Compute the partial volumes conditionally
+        #vol_state = np.where(is_partial_volume_case1, lens[neigh] / 2.0 - (ref_mag_state - horiz), vol_state)
+        #vol_state = np.where(is_partial_volume_case2, lens[neigh] / 2.0 + (horiz - ref_mag_state), vol_state)
 
-        #Trim down the arrays to the minimum and create masked arrays for the upcoming
-        #internal force calculation
+        ##Trim down the arrays to the minimum and create masked arrays for the upcoming
+        ##internal force calculation
         self.max_neighbors = np.max((vol_state != -1).sum(axis=1))
         #:The *volume scalar-state* is a masked array containing the partial volumes of the support neighborhood
         self.volume_state = ma.masked_equal(vol_state[:,:self.max_neighbors],-1)
         self.volume_state.harden_mask()
 
-        #Now compute the "reverse volume state", this is the partial volume of the "source" node, i.e. node i,
-        #as seen from node j
+        ##Now compute the "reverse volume state", this is the partial volume of the "source" node, i.e. node i,
+        ##as seen from node j
         rev_vol_state = np.ones_like(vol_state) * lens[:,None]
-        rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
-        rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
+        #rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
+        #rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
         #:The *reverse volume scalar-state* is defined for computational convience, it is the partial volume of the *source* node as seen from the support neighborhood nodes
         self.reverse_volume_state = ma.masked_array(rev_vol_state[:,:self.max_neighbors], mask=self.volume_state.mask)
 
         return
 
-    #Compute the force vector-state using a native peridynamic formulation
-    def __compute_force_state_native(self, disp):
+    #Compute the force vector-state using a LPS peridynamic formulation
+    def __compute_force_state_LPS(self, disp):
             
         #Define some local convenience variables     
         ref_pos = self.pd_nodes 
@@ -250,7 +255,7 @@ class PD_Problem():
         #Compute 1d strain
         strain = def_grad - 1.0
 
-        #Compute 1d stress
+        #Compute 1d pythstress
         stress = self.bulk_modulus * strain
 
         #In 1d the Cauchy stress and 1st Piola-Kirchoff stress coincide, so there
@@ -270,21 +275,21 @@ class PD_Problem():
         rev_vol_state = self.reverse_volume_state
         neigh = self.neighborhood
         
-
         #Compute the force vector-state according to the choice of constitutive
         #model  
-        if self.constitutive_model_flag == 'native':
-            force_state = self.__compute_force_state_native(displacement)
+        if self.constitutive_model_flag == 'LPS':
+            force_state = self.__compute_force_state_LPS(displacement)
 
         elif self.constitutive_model_flag == 'correspondence':
             force_state = self.__compute_force_state_correspondence(displacement)
 
-        
         #Integrate nodal forces 
+        force = np.zeros_like(force)
         force[:] += (force_state * vol_state).sum(axis=1)
 
         tmp = np.bincount(neigh.compressed(), (force_state * rev_vol_state).compressed())
         force[:len(tmp)] -= tmp
+
 
         return
 
@@ -336,7 +341,7 @@ class PD_Problem():
         guess = np.linspace(-prescribed_displacement, prescribed_displacement, len(self.displacement))
 
         #Solve
-        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-8)
+        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-12)
 
 
 
@@ -358,9 +363,9 @@ class PD_Problem():
 if __name__ == "__main__":
 
     #Define problem size
-    fixed_horizon = 4.2
+    fixed_horizon = 2.2
     fixed_length = 40
-    delta_x = 1.0
+    delta_x = 0.5
 
     #Instantiate a 1d peridynamic problem with equally spaced nodes
     problem1 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon)
@@ -402,8 +407,8 @@ if __name__ == "__main__":
     disp4 = problem4.get_solution()
     nodes4 = problem4.get_nodes()
 
-    #plt.plot(nodes1, disp1, 'k*-')
     plt.plot(nodes1, disp1, 'k-', nodes2, disp2, 'r-', nodes3, disp3, 'b-', nodes4, disp4, 'g-')
+    #plt.legend(location="lower right", label=['LPS - reg. grid', 'LPS - randomized grid', 'Corr. - reg. grid', 'Corr. - randomized grid'])
     plt.show()
 
 
