@@ -132,6 +132,7 @@ class PD_Problem():
         #:A Numpy masked array containing the *shape tensor* as defined in Silling et al. 2007, in 1D this is identical to the *weighted volume*, this would not be true in higher dimensions
         self.shape_tensor = (self.influence_state * self.reference_position_state * 
                 self.reference_position_state * vol_state).sum(axis=1)
+        self.shape_tensor.setflags(write=False)
 
         #:The displacement field
         self.displacement = np.zeros_like(self.pd_nodes)
@@ -156,34 +157,38 @@ class PD_Problem():
         #Initialize the volume_state to the lengths
         vol_state = lens[neigh]
         #Place dummy -1's in node locations that are not fully inside the support neighborhood nor have a partial volume
-        vol_state = np.where(ref_mag_state <= horiz, vol_state, -1)
         vol_state = np.where(ref_mag_state < horiz + lens[neigh] / 2.0, vol_state, -1)
 
         #Check to see if the neighboring node has a partial volume
-        #is_partial_volume = np.abs(horiz - ref_mag_state) < lens[neigh] / 2.0
-        ##Two different scenarios:
-        #is_partial_volume_case1 = np.all([is_partial_volume, 
-                                          #ref_mag_state >= horiz],axis=0)
-        #is_partial_volume_case2 = np.all([is_partial_volume, 
-                                          #ref_mag_state < horiz],axis=0) 
+        is_partial_volume = np.abs(horiz - ref_mag_state) < lens[neigh] / 2.0
+        #Two different scenarios:
+        is_partial_volume_case1 = np.all([is_partial_volume, 
+                                         ref_mag_state >= horiz],axis=0)
+        is_partial_volume_case2 = np.all([is_partial_volume, 
+                                          ref_mag_state < horiz],axis=0) 
 
-        ##Compute the partial volumes conditionally
-        #vol_state = np.where(is_partial_volume_case1, lens[neigh] / 2.0 - (ref_mag_state - horiz), vol_state)
-        #vol_state = np.where(is_partial_volume_case2, lens[neigh] / 2.0 + (horiz - ref_mag_state), vol_state)
+        #Compute the partial volumes conditionally
+        vol_state = np.where(is_partial_volume_case1, lens[neigh] / 2.0 - (ref_mag_state - horiz), vol_state)
+        vol_state = np.where(is_partial_volume_case2, lens[neigh] / 2.0 + (horiz - ref_mag_state), vol_state)
+        #If the partial volume is predicted to be larger than the real volume, set it back
+        vol_state = np.where(vol_state > lens[neigh], lens[neigh], vol_state)
 
-        ##Trim down the arrays to the minimum and create masked arrays for the upcoming
-        ##internal force calculation
+        #Trim down the arrays to the minimum and create masked arrays for the upcoming
+        #internal force calculation
         self.max_neighbors = np.max((vol_state != -1).sum(axis=1))
         #:The *volume scalar-state* is a masked array containing the partial volumes of the support neighborhood
         self.volume_state = ma.masked_equal(vol_state[:,:self.max_neighbors],-1)
         self.volume_state.harden_mask()
 
-        ##Now compute the "reverse volume state", this is the partial volume of the "source" node, i.e. node i,
-        ##as seen from node j
+        #Now compute the "reverse volume state", this is the partial volume of the "source" node, i.e. node i,
+        #as seen from node j.  This doesn't show up anywhere in any papers, it's just used here for computational
+        #convenience
         rev_vol_state = np.ones_like(vol_state) * lens[:,None]
-        #rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
-        #rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
-        #:The *reverse volume scalar-state* is defined for computational convience, it is the partial volume of the *source* node as seen from the support neighborhood nodes
+        rev_vol_state = np.where(is_partial_volume_case1, lens[:, None] / 2.0 - (ref_mag_state - horiz), rev_vol_state)
+        rev_vol_state = np.where(is_partial_volume_case2, lens[:, None] / 2.0 + (horiz - ref_mag_state), rev_vol_state)
+        #If the partial volume is predicted to be larger than the real volume, set it back
+        rev_vol_state = np.where(rev_vol_state > lens[:, None], lens[:, None], rev_vol_state)
+        #:The *reverse volume scalar-state* is defined for computational convenience, it is the partial volume of the *source* node as seen from the support neighborhood nodes
         self.reverse_volume_state = ma.masked_array(rev_vol_state[:,:self.max_neighbors], mask=self.volume_state.mask)
 
         return
@@ -290,7 +295,6 @@ class PD_Problem():
         tmp = np.bincount(neigh.compressed(), (force_state * rev_vol_state).compressed())
         force[:len(tmp)] -= tmp
 
-
         return
 
 
@@ -344,7 +348,6 @@ class PD_Problem():
         self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-12)
 
 
-
     #Public get functions
     def get_solution(self):
         ''' Convenience function for retrieving displacement'''
@@ -363,7 +366,7 @@ class PD_Problem():
 if __name__ == "__main__":
 
     #Define problem size
-    fixed_horizon = 2.2
+    fixed_horizon = 3.5
     fixed_length = 40
     delta_x = 0.5
 
@@ -400,15 +403,22 @@ if __name__ == "__main__":
     #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
     #are perturbed randomly by randomization_factor. Uses the correspondence constitutive
     #model
-    problem4 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3, constitutive_model_flag='correspondence')
+    problem4 = PD_Problem(bar_length=fixed_length, 
+            number_of_elements=(fixed_length/delta_x), 
+            horizon=fixed_horizon, 
+            randomization_factor=0.3, 
+            constitutive_model_flag='correspondence')
     #Solve the problem
     problem4.solve()
     #Get the node locations and displacement solution
     disp4 = problem4.get_solution()
     nodes4 = problem4.get_nodes()
 
-    plt.plot(nodes1, disp1, 'k-', nodes2, disp2, 'r-', nodes3, disp3, 'b-', nodes4, disp4, 'g-')
-    #plt.legend(location="lower right", label=['LPS - reg. grid', 'LPS - randomized grid', 'Corr. - reg. grid', 'Corr. - randomized grid'])
+    plt.plot(nodes1, disp1, 'k-', label='LPS - equal')
+    plt.plot(nodes2, disp2, 'r-', label='LPS - random')
+    plt.plot(nodes3, disp3, 'b-', label='Corr. - equal')
+    plt.plot(nodes4, disp4, 'g-', label='Corr. - random')
+    plt.legend(loc='upper left')
     plt.show()
 
 
