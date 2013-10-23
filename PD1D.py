@@ -125,7 +125,8 @@ class PD_Problem():
         self.reference_magnitude_state.setflags(write=False)
 
         #:A Numpy masked array containing the *influence vector-state* as defined in Silling et al. 2007
-        self.influence_state = np.ones_like(vol_state)
+        ratio = self.reference_magnitude_state / self.horizon
+        self.influence_state = np.ones_like(vol_state) - 35.0 * ratio ** 4.0 + 84.0 * ratio ** 5.0 - 70 * ratio ** 6.0 + 20 * ratio ** 7.0
 
         #Compute the shape tensor (really a scalar because this is 1d, just want to use 
         #consistent terminology)
