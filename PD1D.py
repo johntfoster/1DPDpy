@@ -261,7 +261,7 @@ class PD_Problem():
         #Compute 1d strain
         strain = def_grad - 1.0
 
-        #Compute 1d pythstress
+        #Compute 1d stress
         stress = self.bulk_modulus * strain
 
         #In 1d the Cauchy stress and 1st Piola-Kirchoff stress coincide, so there
@@ -271,6 +271,8 @@ class PD_Problem():
         force_state = inf_state * stress[:,None] / shape_tens[:,None] * ref_pos_state
 
         return force_state
+
+
 
    
     # Internal force calculation
@@ -303,14 +305,18 @@ class PD_Problem():
     def __compute_residual(self, disp):
 
         #Apply displacements
-        disp[self.left_boundary_region] = -self.prescribed_displacement
-        disp[self.right_boundary_region] = self.prescribed_displacement
+        disp[self.left_boundary_region] = (self.prescribed_displacement
+                                           / self.bar_length / 0.5
+                                           * self.pd_nodes[self.left_boundary_region])
+        disp[self.right_boundary_region] = (self.prescribed_displacement
+                                           / self.bar_length / 0.5
+                                           * self.pd_nodes[self.right_boundary_region])
+                                           
 
         #Initialize residual
         residual_vector = np.zeros_like(self.displacement)
 
         #Compute the out-of-balance force vector
-        residual_vector[:] = 0.0
         self.__compute_internal_force(disp, residual_vector)
 
         #Zero out the residual in the kinematic boundary condition region
