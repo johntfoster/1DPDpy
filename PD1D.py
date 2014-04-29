@@ -387,44 +387,44 @@ if __name__ == "__main__":
 
     #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
     #are perturbed randomly by randomization_factor
-    problem2 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3)
+    #problem2 = PD_Problem(bar_length=fixed_length, number_of_elements=(fixed_length/delta_x), horizon=fixed_horizon, randomization_factor=0.3)
     #Solve the problem
-    problem2.solve()
+    #problem2.solve()
     #Get the node locations and displacement solution
-    disp2 = problem2.get_solution()
-    nodes2 = problem2.get_nodes()
+    #disp2 = problem2.get_solution()
+    #nodes2 = problem2.get_nodes()
 
     #Instantiate a 1d peridynamic problem with equally spaced nodes using a 
     #correspondence constitutive model
-    problem3 = PD_Problem(bar_length=fixed_length, 
-            number_of_elements=(fixed_length/delta_x), 
-            horizon=fixed_horizon,
-            constitutive_model_flag='correspondence')
+    #problem3 = PD_Problem(bar_length=fixed_length, 
+            #number_of_elements=(fixed_length/delta_x), 
+            #horizon=fixed_horizon,
+            #constitutive_model_flag='correspondence')
     #Solve the problem
-    problem3.solve()
+    #problem3.solve()
     #problem1.solve(absolute_tolerence=1.0e-6,number_of_iterations=1000)
     #Get the node locations and displacement solution
-    disp3 = problem3.get_solution()
-    nodes3 = problem3.get_nodes()
+    #disp3 = problem3.get_solution()
+    #nodes3 = problem3.get_nodes()
 
     #Instantiate a 1d peridynamic problem with randomly spaced nodes, the interior nodes
     #are perturbed randomly by randomization_factor. Uses the correspondence constitutive
     #model
-    problem4 = PD_Problem(bar_length=fixed_length, 
-            number_of_elements=(fixed_length/delta_x), 
-            horizon=fixed_horizon, 
-            randomization_factor=0.3, 
-            constitutive_model_flag='correspondence')
+    #problem4 = PD_Problem(bar_length=fixed_length, 
+            #number_of_elements=(fixed_length/delta_x), 
+            #horizon=fixed_horizon, 
+            #randomization_factor=0.3, 
+            #constitutive_model_flag='correspondence')
     #Solve the problem
-    problem4.solve()
+    #problem4.solve()
     #Get the node locations and displacement solution
-    disp4 = problem4.get_solution()
-    nodes4 = problem4.get_nodes()
+    #disp4 = problem4.get_solution()
+    #nodes4 = problem4.get_nodes()
 
-    plt.plot(nodes1, disp1, 'k-', label='LPS - equal')
-    plt.plot(nodes2, disp2, 'r-', label='LPS - random')
-    plt.plot(nodes3, disp3, 'b-', label='Corr. - equal')
-    plt.plot(nodes4, disp4, 'g-', label='Corr. - random')
+    plt.plot(nodes1, disp1, 'k-', label='LPS')
+    #plt.plot(nodes2, disp2, 'r-', label='LPS - random')
+    #plt.plot(nodes3, disp3, 'b-', label='Corr. - equal')
+    #plt.plot(nodes4, disp4, 'g-', label='Corr. - random')
     plt.legend(loc='upper left')
     plt.show()
 
