@@ -8,6 +8,7 @@ import scipy.spatial
 import scipy.optimize
 import matplotlib.pyplot as plt
 
+np.random.seed(seed=10)
 
 
 class PD_Problem():
@@ -305,13 +306,8 @@ class PD_Problem():
     def __compute_residual(self, disp):
 
         #Apply displacements
-        disp[self.left_boundary_region] = (self.prescribed_displacement
-                                           / self.bar_length / 0.5
-                                           * self.pd_nodes[self.left_boundary_region])
-        disp[self.right_boundary_region] = (self.prescribed_displacement
-                                           / self.bar_length / 0.5
-                                           * self.pd_nodes[self.right_boundary_region])
-                                           
+        disp[self.left_boundary_region] = self.guess[self.left_boundary_region]
+        disp[self.right_boundary_region] = self.guess[self.right_boundary_region]
 
         #Initialize residual
         residual_vector = np.zeros_like(self.displacement)
@@ -349,10 +345,10 @@ class PD_Problem():
         self.right_boundary_region = self.tree.query_ball_point(self.pd_nodes[-1, None], r=self.horizon, p=2, eps=0.0)
 
         #Initial guess is linear between endpoint displacements
-        guess = np.linspace(-prescribed_displacement, prescribed_displacement, len(self.displacement))
+        self.guess = np.linspace(-prescribed_displacement, prescribed_displacement, len(self.displacement))
 
         #Solve
-        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, guess, x_rtol=1.0e-12)
+        self.displacement = scipy.optimize.newton_krylov(self.__compute_residual, self.guess, x_rtol=1.0e-12, method='bicgstab')
 
 
     #Public get functions
