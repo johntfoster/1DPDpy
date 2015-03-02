@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/10553/johntfoster/1DPDpy.svg)](http://dx.doi.org/10.5281/zenodo.15795)
+
 This is a simple 1 dimensional peridynamics code meant to represent a bar with
 displacement boundary conditions at either end.  The class `1D_Problem` allows
 some flexibility in defining with respect to the problem size, discretization
